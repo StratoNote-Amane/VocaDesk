@@ -391,6 +391,22 @@ select.form-input option{background:#1c1c1f;color:var(--ink)}
   color:var(--vermilion);font-weight:600;
 }
 
+.input-answer-wrap{display:flex;justify-content:center;margin:6px 0 4px}
+.input-answer-wrap .blank-input{font-size:20px;min-width:12ch;padding:8px 16px}
+
+.choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px}
+.choice-btn{
+  padding:16px 18px;border-radius:var(--r);border:1.8px solid var(--line2);
+  background:var(--glass);color:var(--ink);font-family:var(--font);font-size:15.5px;
+  letter-spacing:.03em;cursor:pointer;text-align:left;line-height:1.4;
+  transition:border-color .15s,background-color .15s,color .15s;
+}
+.choice-btn:hover:not(:disabled){border-color:var(--gold-deep);background:var(--gold-soft)}
+.choice-btn:disabled{cursor:default}
+.choice-btn.correct{border-color:var(--moss);background:var(--moss-soft);color:var(--moss);font-weight:700}
+.choice-btn.wrong{border-color:var(--vermilion);background:var(--vermilion-soft);color:var(--vermilion);font-weight:700}
+@media (max-width:640px){.choice-grid{grid-template-columns:1fr}}
+
 .feedback{
   display:none;padding:13px 18px;border-radius:var(--r);
   font-size:13.5px;margin-bottom:16px;align-items:center;gap:10px;
@@ -791,15 +807,12 @@ input[type=range]::-webkit-slider-thumb{
         </div>
       </div>
     </div>
-    <div class="trans-box">
-      <div class="lbl">日 本 語 訳</div>
-      <div class="val" id="q-trans"></div>
-    </div>
     <div class="sentence-box">
-      <div class="lbl">原 文 ― 空 欄 に 単 語 を 入 力</div>
-      <div class="sentence-text" id="q-sentence"></div>
+      <div class="lbl" id="q-prompt-label">日 本 語 訳</div>
+      <div class="sentence-text" id="q-prompt" style="text-align:center"></div>
       <div class="q-memo" id="q-memo" style="display:none"></div>
     </div>
+    <div id="q-answer-area"></div>
     <div class="feedback" id="q-feedback"></div>
     <div class="btn-row">
       <button class="btn primary lg" id="q-check-btn" onclick="checkAnswer()">確　認</button>
@@ -841,18 +854,18 @@ input[type=range]::-webkit-slider-thumb{
         <tbody>
           <tr>
             <td style="padding:7px 12px;border:1px solid var(--line);color:var(--vermilion);font-size:12px">A 列</td>
-            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">単語</td>
-            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">serendipity</td>
+            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">No（任意）</td>
+            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">1</td>
           </tr>
           <tr>
             <td style="padding:7px 12px;border:1px solid var(--line);color:var(--vermilion);font-size:12px">B 列</td>
-            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">日本語訳</td>
-            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">思いがけない幸運</td>
+            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">単語</td>
+            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">believe</td>
           </tr>
           <tr>
             <td style="padding:7px 12px;border:1px solid var(--line);color:var(--vermilion);font-size:12px">C 列</td>
-            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">例文</td>
-            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">It was a _ to find this place.</td>
+            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">意味</td>
+            <td style="padding:7px 12px;border:1px solid var(--line);color:var(--ink-soft)">を信じる</td>
           </tr>
           <tr>
             <td style="padding:7px 12px;border:1px solid var(--line);color:var(--vermilion);font-size:12px">D 列</td>
@@ -861,7 +874,7 @@ input[type=range]::-webkit-slider-thumb{
           </tr>
         </tbody>
       </table>
-      <p style="font-size:12px;color:var(--ink-faint);margin-top:8px;letter-spacing:.03em">※ C列の単語の位置に <code style="background:rgba(231,185,76,.14);padding:1px 5px;border-radius:3px;color:var(--gold)">_</code> を一箇所入れてください。D列は出典などのメモで、空欄でも構いません。学習中は例文の右下に、管理画面では一覧に表示されます</p>
+      <p style="font-size:12px;color:var(--ink-faint);margin-top:8px;letter-spacing:.03em">※ A列のNoは無視されます（あってもなくてもOK）。B列の単語とC列の意味は一対一対応で、必須です。D列は出典などのメモで、空欄でも構いません。管理画面で一覧に表示されます</p>
     </div>
     <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
       <div class="drop-zone-icon">📂</div>
@@ -881,7 +894,7 @@ input[type=range]::-webkit-slider-thumb{
       </div>
       <div class="preview-wrap">
         <table class="preview-table">
-          <thead><tr><th>単語</th><th>日本語訳</th><th>例文</th><th>メモ</th><th>検証</th></tr></thead>
+          <thead><tr><th>単語</th><th>意味</th><th>メモ</th><th>検証</th></tr></thead>
           <tbody id="preview-body"></tbody>
         </table>
       </div>
@@ -902,18 +915,18 @@ input[type=range]::-webkit-slider-thumb{
   <!-- ── MANAGE ── -->
   <div id="screen-manage" class="screen">
     <h1 class="page-title">単語を管理</h1>
-    <p class="page-sub">単語・例文・メモの確認、編集、削除ができます</p>
+    <p class="page-sub">単語・意味・メモの確認、編集、削除ができます</p>
     <div class="manage-toolbar">
       <select class="form-input" id="manage-deck-select" style="width:180px" onchange="renderManage()"></select>
       <select class="form-input" id="manage-status-filter" style="width:180px" onchange="renderManage()">
         <option value="all">すべて表示</option>
         <option value="flag">⚠ 要確認</option>
       </select>
-      <input class="form-input" id="manage-search" type="text" placeholder="単語・訳・例文で検索…" style="flex:1" oninput="renderManage()">
+      <input class="form-input" id="manage-search" type="text" placeholder="単語・意味で検索…" style="flex:1" oninput="renderManage()">
     </div>
     <div class="card flush" style="overflow-x:auto">
       <table class="word-table">
-        <thead><tr><th>単語</th><th>日本語訳</th><th>例文</th><th>メモ</th><th>次回復習</th><th></th></tr></thead>
+        <thead><tr><th>単語</th><th>意味</th><th>メモ</th><th>次回復習</th><th></th></tr></thead>
         <tbody id="manage-body"></tbody>
       </table>
     </div>
@@ -993,12 +1006,8 @@ input[type=range]::-webkit-slider-thumb{
       <input class="form-input" id="edit-word-word" type="text">
     </div>
     <div class="form-group">
-      <label class="form-label">日本語訳</label>
+      <label class="form-label">意味</label>
       <input class="form-input" id="edit-word-trans" type="text">
-    </div>
-    <div class="form-group">
-      <label class="form-label">例文（単語の位置に _ を一箇所）</label>
-      <input class="form-input" id="edit-word-sentence" type="text">
     </div>
     <div class="form-group">
       <label class="form-label">メモ（任意・出典など）</label>
@@ -1194,6 +1203,14 @@ function renderHome() {
         <button class="mode-tab" onclick="setMode(${d.id},'all',this)">すべて</button>
         <button class="mode-tab" onclick="setMode(${d.id},'random',this)">ランダム</button>
       </div>
+      <div class="mode-tabs" id="dir-${d.id}" style="margin-top:8px">
+        <button class="mode-tab active" onclick="setDirection(${d.id},'m2w',this)">日本語→英語</button>
+        <button class="mode-tab" onclick="setDirection(${d.id},'w2m',this)">英語→日本語</button>
+      </div>
+      <div class="mode-tabs" id="fmt-${d.id}" style="margin-top:8px">
+        <button class="mode-tab active" onclick="setFormat(${d.id},'choice',this)">4択</button>
+        <button class="mode-tab" onclick="setFormat(${d.id},'input',this)">入力式</button>
+      </div>
       <div class="deck-actions">
         <button class="btn primary" style="flex:1" onclick="startQuizDeck(${d.id})">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -1217,6 +1234,24 @@ function setMode(deckId, mode, btn) {
 }
 function getMode(deckId) { return deckModes[deckId] || 'due'; }
 
+// per-deck selected direction: 'm2w' = 日本語を見て英単語を答える／'w2m' = 英単語を見て日本語訳を答える
+const deckDirections = {};
+function setDirection(deckId, direction, btn) {
+  deckDirections[deckId] = direction;
+  document.querySelectorAll(`#dir-${deckId} .mode-tab`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function getDirection(deckId) { return deckDirections[deckId] || 'm2w'; }
+
+// per-deck selected format: 'choice' = 4択／'input' = 入力式
+const deckFormats = {};
+function setFormat(deckId, format, btn) {
+  deckFormats[deckId] = format;
+  document.querySelectorAll(`#fmt-${deckId} .mode-tab`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function getFormat(deckId) { return deckFormats[deckId] || 'choice'; }
+
 function confirmDeleteDeck(id, name) {
   confirm(`「${name}」を削除しますか？`, 'この単語帳の全ての単語も削除されます', () => deleteDeck(id));
 }
@@ -1233,26 +1268,55 @@ function deleteDeck(id) {
    QUIZ
    ============================================================ */
 let qWords=[], qIdx=0, qOk=0, qNg=0, qInput=null, qDeckId=null;
+let qDirection='m2w', qFormat='choice', qCorrectAnswer='', qAnswered=false;
 const SESSION_KEY = 'vq_session';
 const saveSession = () => {
   if (qDeckId == null) return;
-  LS.set(SESSION_KEY, { deckId: qDeckId, mode: getMode(qDeckId), wordIds: qWords.map(w => w.id), idx: qIdx, ok: qOk, ng: qNg });
+  LS.set(SESSION_KEY, { deckId: qDeckId, mode: getMode(qDeckId), direction: qDirection, format: qFormat, wordIds: qWords.map(w => w.id), idx: qIdx, ok: qOk, ng: qNg });
 };
 const clearSession = () => localStorage.removeItem(SESSION_KEY);
 const loadSession = () => LS.get(SESSION_KEY);
 
+// 同じ単語帳内の他の単語から、正解と重複しないダミー選択肢を最大count件集める
+function getDistractors(deckId, excludeId, field, correctVal, count) {
+  const pool = loadWords().filter(w => w.deckId === deckId && String(w.id) !== String(excludeId));
+  const seen = new Set([normalizeKey(correctVal)]);
+  const candidates = [];
+  shuffle([...pool]).forEach(w => {
+    const val = String((w[field]||'')).trim();
+    const key = normalizeKey(val);
+    if (val && !seen.has(key)) { seen.add(key); candidates.push(val); }
+  });
+  return candidates.slice(0, count);
+}
+
 function startQuizDeck(deckId, forceNew) {
   qDeckId = deckId;
   const mode = getMode(deckId);
+  let direction = getDirection(deckId);
+  let format = getFormat(deckId);
   const now = Date.now();
+
+  // 4択には「正解＋異なる選択肢3つ」が必要。単語帳内のユニークな値が4つ未満なら入力式に自動切替
+  if (format === 'choice') {
+    const deckWords = loadWords().filter(w => w.deckId === deckId);
+    const field = direction === 'w2m' ? 'trans' : 'word';
+    const uniqueVals = new Set(deckWords.map(w => normalizeKey(w[field])).filter(Boolean));
+    if (uniqueVals.size < 4) {
+      format = 'input';
+      toast('4択を作るには単語が4つ以上必要です。入力式で出題します');
+    }
+  }
 
   if (!forceNew) {
     const session = loadSession();
-    if (session && session.deckId === deckId && session.mode === mode && Array.isArray(session.wordIds) && session.idx < session.wordIds.length) {
+    if (session && session.deckId === deckId && session.mode === mode && session.direction === direction && session.format === format
+        && Array.isArray(session.wordIds) && session.idx < session.wordIds.length) {
       const byId = new Map(loadWords().map(w => [String(w.id), w]));
       const resumed = session.wordIds.map(id => byId.get(String(id))).filter(Boolean);
       if (resumed.length) {
         qWords = resumed;
+        qDirection = direction; qFormat = format;
         qIdx = Math.min(session.idx, qWords.length);
         qOk = session.ok || 0;
         qNg = session.ng || 0;
@@ -1275,6 +1339,7 @@ function startQuizDeck(deckId, forceNew) {
     return;
   }
   qWords = shuffle([...words]);
+  qDirection = direction; qFormat = format;
   qIdx = 0; qOk = 0; qNg = 0;
   document.getElementById('q-ok').textContent = 0;
   document.getElementById('q-ng').textContent = 0;
@@ -1286,41 +1351,93 @@ function startQuizDeck(deckId, forceNew) {
 function loadCard() {
   if (qIdx >= qWords.length) { showResult(); return; }
   const w = qWords[qIdx];
-  document.getElementById('q-trans').textContent = w.trans;
-  const parts = (w.sentence||'').split('_');
-  const sentEl = document.getElementById('q-sentence');
-  sentEl.innerHTML = '';
-  sentEl.appendChild(document.createTextNode(parts[0]||''));
-  qInput = document.createElement('input');
-  qInput.type = 'text';
-  qInput.className = 'blank-input';
-  qInput.placeholder = '　　　';
-  qInput.autocomplete = 'off';
-  qInput.spellcheck = false;
-  qInput.style.width = Math.max(3.5, (w.word||'').length + 1.5) + 'ch';
-  qInput.addEventListener('keydown', e => { if (e.key === 'Enter') checkAnswer(); });
-  sentEl.appendChild(qInput);
-  if (parts[1]) sentEl.appendChild(document.createTextNode(parts[1]));
+  const promptField = qDirection === 'w2m' ? 'word' : 'trans';
+  const answerField = qDirection === 'w2m' ? 'trans' : 'word';
+  document.getElementById('q-prompt-label').textContent = qDirection === 'w2m' ? '英 単 語' : '日 本 語 訳';
+  document.getElementById('q-prompt').textContent = w[promptField] || '';
+  qCorrectAnswer = String(w[answerField] || '').trim();
+  qAnswered = false;
+
   const memoEl = document.getElementById('q-memo');
   if (w.memo) { memoEl.textContent = w.memo; memoEl.style.display = ''; }
   else { memoEl.textContent = ''; memoEl.style.display = 'none'; }
   document.getElementById('q-feedback').className = 'feedback';
   document.getElementById('q-feedback').innerHTML = '';
-  document.getElementById('q-check-btn').style.display = '';
   document.getElementById('q-next-btn').style.display = 'none';
+
+  const area = document.getElementById('q-answer-area');
+  area.innerHTML = '';
+  qInput = null;
+
+  let cardFormat = qFormat;
+  let distractors = [];
+  if (cardFormat === 'choice') {
+    distractors = getDistractors(w.deckId, w.id, answerField, qCorrectAnswer, 3);
+    if (distractors.length < 3) cardFormat = 'input'; // この語だけ選択肢が足りない場合の保険
+  }
+
+  if (cardFormat === 'choice') {
+    document.getElementById('q-check-btn').style.display = 'none';
+    const options = shuffle([qCorrectAnswer, ...distractors]);
+    const grid = document.createElement('div');
+    grid.className = 'choice-grid';
+    options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'choice-btn';
+      btn.textContent = opt;
+      btn.onclick = () => selectChoice(btn, opt);
+      grid.appendChild(btn);
+    });
+    area.appendChild(grid);
+  } else {
+    document.getElementById('q-check-btn').style.display = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'input-answer-wrap';
+    qInput = document.createElement('input');
+    qInput.type = 'text';
+    qInput.className = 'blank-input';
+    qInput.placeholder = qDirection === 'w2m' ? '日本語で入力' : '英単語を入力';
+    qInput.autocomplete = 'off';
+    qInput.spellcheck = false;
+    qInput.addEventListener('keydown', e => { if (e.key === 'Enter') checkAnswer(); });
+    wrap.appendChild(qInput);
+    area.appendChild(wrap);
+  }
+
   updateProgress();
   setTimeout(() => qInput && qInput.focus(), 60);
 }
 
+function selectChoice(btn, value) {
+  if (qAnswered) return;
+  qAnswered = true;
+  const w = qWords[qIdx];
+  const correct = normalizeKey(value) === normalizeKey(qCorrectAnswer);
+  document.querySelectorAll('#q-answer-area .choice-btn').forEach(b => {
+    b.disabled = true;
+    if (normalizeKey(b.textContent) === normalizeKey(qCorrectAnswer)) b.classList.add('correct');
+    else if (b === btn) b.classList.add('wrong');
+  });
+  finishAnswer(correct, w);
+}
+
 function checkAnswer() {
-  if (!qInput || qInput.disabled) return;
+  if (!qInput || qInput.disabled || qAnswered) return;
+  qAnswered = true;
   const w = qWords[qIdx];
   const ans = qInput.value.trim();
-  const correct = ans === w.word;
+  const correct = ans === qCorrectAnswer;
   qInput.className = 'blank-input ' + (correct ? 'correct' : 'wrong');
+  qInput.disabled = true;
+  document.getElementById('q-check-btn').style.display = 'none';
+  finishAnswer(correct, w);
+}
+
+function finishAnswer(correct, w) {
   const fb = document.getElementById('q-feedback');
   fb.className = 'feedback ' + (correct ? 'ok' : 'ng');
-  fb.innerHTML = correct ? '✓　正解！' : `✕　不正解。正解：<strong>${esc(w.word)}</strong>`;
+  fb.innerHTML = correct ? '✓　正解！' : `✕　不正解。正解：<strong>${esc(qCorrectAnswer)}</strong>`;
   correct ? qOk++ : qNg++;
   sm2(w, correct ? 5 : 1);
   const words = loadWords();
@@ -1329,9 +1446,7 @@ function checkAnswer() {
   saveWords(words);
   document.getElementById('q-ok').textContent = qOk;
   document.getElementById('q-ng').textContent = qNg;
-  document.getElementById('q-check-btn').style.display = 'none';
   document.getElementById('q-next-btn').style.display = '';
-  qInput.disabled = true;
   saveSession();
 }
 
@@ -1424,22 +1539,23 @@ function renderImportSheet(index) {
   const tbody = document.getElementById('preview-body');
   tbody.innerHTML = '';
   let valid = 0, invalid = 0;
+  // A列=No（無視）／B列=単語／C列=意味／D列=メモ（任意）
   rows.forEach((row, rowIndex) => {
-    if (!row[0] && !row[1]) return;
-    const word = String(row[0]||'').trim();
-    const trans = String(row[1]||'').trim();
-    const sentence = String(row[2]||'').trim();
+    const noCell = String(row[0]||'').trim();
+    const word = String(row[1]||'').trim();
+    const trans = String(row[2]||'').trim();
     const memo = String(row[3]||'').trim();
-    if (rowIndex === 0 && word === '単語' && trans === '日本語訳') return;
-    const blankCount = (sentence.match(/_/g) || []).length;
-    const ok = word && trans && sentence && blankCount === 1;
+    if (!noCell && !word && !trans) return;
+    // ヘッダー行（No / 単語 / 意味）はスキップ
+    if (rowIndex === 0 && (noCell === 'No' || noCell === 'no') && word === '単語' && trans === '意味') return;
+    const ok = !!(word && trans);
     ok ? valid++ : invalid++;
-    importData.push({ word, trans, sentence, memo, ok });
+    importData.push({ word, trans, memo, ok });
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${esc(word)}</td><td>${esc(trans)}</td><td>${esc(sentence)}</td><td style="color:var(--ink-faint)">${esc(memo)}</td>
+    tr.innerHTML = `<td>${esc(word)}</td><td>${esc(trans)}</td><td style="color:var(--ink-faint)">${esc(memo)}</td>
       <td style="text-align:center">${ok
         ? '<span style="color:var(--moss)">✓</span>'
-        : '<span style="color:var(--vermilion)" title="単語・訳・_ が必要">✕</span>'}</td>`;
+        : '<span style="color:var(--vermilion)" title="単語・意味が必要">✕</span>'}</td>`;
     tbody.appendChild(tr);
   });
   document.getElementById('preview-count').textContent = `${sheetName} / ${valid} 件有効 ／ ${invalid} 件スキップ`;
@@ -1459,7 +1575,7 @@ function importWords() {
   if (!valid.length) { toast('インポートできる単語がありません'); return; }
   const words = loadWords();
   valid.forEach(r => {
-    words.push({ id: Date.now()+Math.random(), deckId, word:r.word, trans:r.trans, sentence:r.sentence, memo:r.memo||'', ef:2.5, interval:1, reps:0, nextDue:0 });
+    words.push({ id: Date.now()+Math.random(), deckId, word:r.word, trans:r.trans, memo:r.memo||'', ef:2.5, interval:1, reps:0, nextDue:0 });
   });
   saveWords(words);
   toast(`${valid.length} 語をインポートしました`);
@@ -1492,13 +1608,13 @@ function populateManageDeckSelect() {
   if (!decks.length) sel.innerHTML = '<option value="">（単語帳がありません）</option>';
 }
 
-// 単語と日本語訳が明らかに不一致と思われるものを検出する簡易ヒューリスティック。
+// 単語と意味が明らかに不一致と思われるものを検出する簡易ヒューリスティック。
 // 完全な意味判定はできないため、あくまで「確認を促す」ためのものとして扱う。
 function looksSuspicious(w) {
   const trans = (w.trans||'').trim();
   if (!trans) return true;
   if (normalizeKey(trans) === normalizeKey(w.word||'')) return true;
-  // 日本語訳に日本語の文字（ひらがな・カタカナ・漢字）が一切含まれない場合は要確認
+  // 意味に日本語の文字（ひらがな・カタカナ・漢字）が一切含まれない場合は要確認
   if (!/[\u3040-\u30FF\u3400-\u9FFF]/.test(trans)) return true;
   return false;
 }
@@ -1517,8 +1633,7 @@ function renderManage() {
   if (statusFilter === 'flag') words = words.filter(isFlagged);
   if (q) words = words.filter(w =>
     w.word.toLowerCase().includes(q) ||
-    (w.trans||'').toLowerCase().includes(q) ||
-    (w.sentence||'').toLowerCase().includes(q)
+    (w.trans||'').toLowerCase().includes(q)
   );
 
   const tbody = document.getElementById('manage-body');
@@ -1530,10 +1645,9 @@ function renderManage() {
     const days = daysUntil(w.nextDue||0);
     const flagged = isFlagged(w);
     return `<tr class="${flagged ? 'flag-row' : ''}">
-      <td style="font-weight:500;letter-spacing:.04em">${flagged ? '<span class="flag-dot" title="単語と日本語訳が一致しない可能性があります">⚠</span>' : ''}${esc(w.word)}</td>
+      <td style="font-weight:500;letter-spacing:.04em">${flagged ? '<span class="flag-dot" title="単語と意味が一致しない可能性があります">⚠</span>' : ''}${esc(w.word)}</td>
       <td style="color:var(--ink-soft)">${esc(w.trans)}</td>
-      <td style="color:var(--ink-soft);max-width:280px;white-space:normal;overflow-wrap:break-word">${esc((w.sentence||'').replace(/_/g,'＿'))}</td>
-      <td style="color:var(--ink-faint);font-size:12px;max-width:160px;white-space:normal;overflow-wrap:break-word">${esc(w.memo||'')}</td>
+      <td style="color:var(--ink-faint);font-size:12px;max-width:220px;white-space:normal;overflow-wrap:break-word">${esc(w.memo||'')}</td>
       <td><span class="due-tag ${days===0?'today':'later'}">${days===0?'今日':days+'日後'}</span></td>
       <td style="white-space:nowrap">
         <button class="btn sm ghost" onclick="openEditWordModal('${w.id}')">編集</button>
@@ -1561,7 +1675,6 @@ function openEditWordModal(id) {
   _editWordId = id;
   document.getElementById('edit-word-word').value = w.word || '';
   document.getElementById('edit-word-trans').value = w.trans || '';
-  document.getElementById('edit-word-sentence').value = w.sentence || '';
   document.getElementById('edit-word-memo').value = w.memo || '';
   document.getElementById('modal-edit-word').classList.add('open');
 }
@@ -1569,17 +1682,13 @@ function openEditWordModal(id) {
 function saveEditWord() {
   const word = document.getElementById('edit-word-word').value.trim();
   const trans = document.getElementById('edit-word-trans').value.trim();
-  const sentence = document.getElementById('edit-word-sentence').value.trim();
   const memo = document.getElementById('edit-word-memo').value.trim();
-  if (!word || !trans || !sentence) { toast('単語・日本語訳・例文は必須です'); return; }
-  const blankCount = (sentence.match(/_/g) || []).length;
-  if (blankCount !== 1) { toast('例文には _ を一箇所だけ入れてください'); return; }
+  if (!word || !trans) { toast('単語・意味は必須です'); return; }
   const words = loadWords();
   const i = words.findIndex(x => String(x.id) === String(_editWordId));
   if (i < 0) { closeModal('modal-edit-word'); return; }
   words[i].word = word;
   words[i].trans = trans;
-  words[i].sentence = sentence;
   words[i].memo = memo;
   saveWords(words);
   closeModal('modal-edit-word');
