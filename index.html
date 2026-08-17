@@ -522,6 +522,17 @@ select.form-input option{background:#1a2c4d;color:var(--cream)}
 .feedback.ng{display:flex;background:var(--red-soft);color:#e3a08f;border-color:rgba(168,64,45,.4)}
 .feedback strong{font-family:var(--font-mono);font-size:15px}
 
+/* auto-grade-tag — 回答時間から自動推定した難易度(Hard/Good/Easy)を示す小さなバッジ */
+.auto-grade-tag{
+  display:inline-flex;align-items:center;padding:2px 10px;border-radius:99px;
+  font-size:11px;font-weight:800;letter-spacing:.04em;font-family:var(--font-mono);
+  animation:tag-pop .3s var(--spring) both;
+}
+@keyframes tag-pop{0%{opacity:0;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}
+.auto-grade-tag.ag-hard{background:rgba(168,64,45,.28);color:#f0b3a2}
+.auto-grade-tag.ag-good{background:rgba(217,168,62,.28);color:#f6d896}
+.auto-grade-tag.ag-easy{background:rgba(50,74,104,.34);color:#b7c7e6}
+
 .kbd-hint{
   display:flex;gap:20px;justify-content:center;margin-top:18px;
   font-size:11.5px;color:var(--cream-faint);letter-spacing:.04em;font-family:var(--font);
@@ -631,6 +642,10 @@ kbd{
 .due-tag.later{background:rgba(0,0,0,.05);color:var(--ink-faint)}
 .flag-dot{color:var(--red);margin-right:3px}
 .flag-row td{background:var(--red-soft)}
+.srs-badge{font-size:10px;padding:2px 8px;border-radius:5px;letter-spacing:.04em;font-family:var(--font-mono);font-weight:700;white-space:nowrap}
+.srs-badge.new{background:rgba(0,0,0,.06);color:var(--ink-faint)}
+.srs-badge.learning{background:var(--gold-soft);color:#8a6414}
+.srs-badge.review{background:var(--indigo-soft);color:#22304c}
 
 /* ============================================================
    SETTINGS
@@ -909,8 +924,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
       <button class="btn lg" id="q-next-btn" onclick="nextCard()" style="display:none">次 へ →</button>
     </div>
     <p class="kbd-hint" id="q-kbd-hint">
-      <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> で選択</span>
-      <span><kbd>Enter</kbd> で次へ</span>
+      <span id="q-kbd-choice"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> で選択</span>
+      <span id="q-kbd-next" style="display:none"><kbd>Enter</kbd> で次へ</span>
     </p>
   </div>
 
@@ -1015,6 +1030,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
       <select class="form-input" id="manage-status-filter" style="width:180px" onchange="renderManage()">
         <option value="all">すべて表示</option>
         <option value="flag">⚠ 要確認</option>
+        <option value="leech">🐛 苦手（リーチ）</option>
+        <option value="new">🆕 未学習</option>
+        <option value="learning">📗 学習中</option>
       </select>
       <input class="form-input" id="manage-search" type="text" placeholder="単語・意味で検索…" style="flex:1" oninput="renderManage()">
     </div>
@@ -1052,6 +1070,20 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
           <span class="dim-label">明　←　暗</span>
           <input type="range" id="dim-slider" min="0" max="0.95" step="0.01" value="0.45" oninput="setDim(this.value)">
           <span id="dim-val" style="font-size:12px;color:var(--ink-faint);min-width:36px;text-align:right">45%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="settings-section" style="margin-bottom:0">
+        <div class="settings-label">学 習 設 定</div>
+        <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;letter-spacing:.03em">
+          1日に新しく学習を始める単語の数に上限を設けます。すでに学習中・復習待ちの単語はこの上限の影響を受けません（Ankiと同じ考え方です）。
+        </p>
+        <div class="dim-row">
+          <span class="dim-label" style="min-width:120px">1日の新規単語数</span>
+          <input type="range" id="newcards-slider" min="0" max="100" step="5" value="20" oninput="setNewCardsLimit(this.value)">
+          <span id="newcards-val" style="font-size:12px;color:var(--ink-faint);min-width:44px;text-align:right">20語</span>
         </div>
       </div>
     </div>
@@ -1215,22 +1247,157 @@ function importBackup(input) {
 }
 
 /* ============================================================
-   SM-2
+   SRS ENGINE — Anki相当のスケジューリング
+   ------------------------------------------------------------
+   - 4段階評価: Again(1) / Hard(2) / Good(3) / Easy(4)
+   - 新規カードは「学習ステップ」を経てから本スケジュールへ卒業する
+     （セッション内で近いうちに再出題される＝Ankiの学習キューを
+      「経過分数」ではなく「あと何枚後に出すか」で近似したもの）
+   - 復習カードを忘れた(Again)場合は「再学習ステップ」を経てから
+     間隔を半分にして復帰する（いきなり1日にリセットしない）
+   - 間隔には ±5% のfuzzを掛けて同じ日に固まるのを防ぐ
+   - 上限間隔・リーチ（何度も間違える単語）検知も搭載
    ============================================================ */
-function sm2(word, quality) {
-  let { ef=2.5, interval=1, reps=0 } = word;
-  if (quality >= 3) {
-    if (reps === 0) interval = 1;
-    else if (reps === 1) interval = 6;
-    else interval = Math.round(interval * ef);
-    reps++;
-  } else { reps = 0; interval = 1; }
-  ef = Math.max(1.3, ef + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
-  word.ef = ef; word.interval = interval; word.reps = reps;
-  word.nextDue = Date.now() + interval * 86400000;
-  return word;
+const SRS = {
+  graduatingInterval: 1,   // 学習ステップ卒業(Good)後の初回間隔(日)
+  easyInterval: 4,         // Easyで即卒業した場合の間隔(日)
+  easyBonus: 1.3,          // Easy時のボーナス倍率
+  hardFactor: 1.2,         // Hard時の間隔倍率
+  newLapseIntervalFactor: 0.5, // 復習カードをAgainした時、新しい間隔 = 直前間隔 × これ
+  minEf: 1.3,
+  startEf: 2.5,
+  maxIntervalDays: 1825,   // 上限5年
+  leechThreshold: 8,       // この回数Againしたらリーチ扱い
+  fuzzRatio: 0.05,         // ±5%
+};
+
+function ensureSrsFields(w) {
+  if (!w.state) w.state = (w.reps > 0) ? 'review' : 'new';
+  if (typeof w.lapses !== 'number') w.lapses = 0;
+  if (typeof w.learningStep !== 'number') w.learningStep = 0;
+  if (typeof w.ef !== 'number') w.ef = SRS.startEf;
+  if (typeof w.interval !== 'number') w.interval = 1;
+  return w;
 }
+
+function fuzzInterval(days) {
+  if (days < 3) return days; // 短い間隔はfuzzさせない(Anki準拠)
+  const delta = Math.max(1, Math.round(days * SRS.fuzzRatio));
+  const jitter = Math.floor(Math.random() * (delta * 2 + 1)) - delta;
+  return Math.max(1, days + jitter);
+}
+
+function capInterval(days) {
+  return Math.min(days, SRS.maxIntervalDays);
+}
+
+/**
+ * 1枚のカードを1回分採点する。
+ * grade: 1=Again, 2=Hard, 3=Good, 4=Easy
+ * 戻り値: { requeue: boolean, requeueOffset: number, graduated: boolean }
+ *   requeue=true の場合、呼び出し側は同一セッション内でこの単語を
+ *   requeueOffset 枚後あたりに再度キューへ差し込むこと。
+ */
+function gradeCard(word, grade) {
+  ensureSrsFields(word);
+  const now = Date.now();
+  let result = { requeue: false, requeueOffset: 0 };
+
+  if (word.state === 'new' || word.state === 'learning') {
+    if (grade === 1) { // Again
+      word.state = 'learning'; word.learningStep = 0;
+      result = { requeue: true, requeueOffset: 2 };
+    } else if (grade === 2) { // Hard — 同じステップを繰り返す
+      word.state = 'learning'; word.learningStep = Math.max(0, word.learningStep);
+      result = { requeue: true, requeueOffset: 4 };
+    } else if (grade === 3) { // Good
+      if (word.learningStep >= 1) {
+        // 2段階目もクリア → 卒業
+        word.state = 'review'; word.reps = (word.reps||0) + 1;
+        word.interval = SRS.graduatingInterval;
+        word.nextDue = now + word.interval * 86400000;
+      } else {
+        word.state = 'learning'; word.learningStep = 1;
+        result = { requeue: true, requeueOffset: 7 };
+      }
+    } else { // Easy — 即卒業＋ボーナス間隔
+      word.state = 'review'; word.reps = (word.reps||0) + 1;
+      word.interval = SRS.easyInterval;
+      word.nextDue = now + word.interval * 86400000;
+    }
+    return result;
+  }
+
+  if (word.state === 'relearning') {
+    if (grade === 1) {
+      word.learningStep = 0;
+      result = { requeue: true, requeueOffset: 3 };
+    } else {
+      // Hard/Good/Easyいずれでも再学習ステップから復帰
+      word.state = 'review'; word.reps = (word.reps||0) + 1;
+      let interval = word.pendingInterval || 1;
+      if (grade === 4) interval = Math.round(interval * SRS.easyBonus);
+      interval = capInterval(fuzzInterval(interval));
+      word.interval = interval;
+      word.nextDue = now + interval * 86400000;
+      word.pendingInterval = undefined;
+    }
+    return result;
+  }
+
+  // state === 'review'
+  let { ef = SRS.startEf, interval = 1, lapses = 0 } = word;
+  if (grade === 1) { // Again → 復習忘れ(lapse)
+    lapses++;
+    ef = Math.max(SRS.minEf, ef - 0.2);
+    const pending = Math.max(1, Math.round(interval * SRS.newLapseIntervalFactor));
+    word.state = 'relearning'; word.learningStep = 0;
+    word.pendingInterval = pending;
+    word.ef = ef; word.lapses = lapses;
+    word.leech = lapses >= SRS.leechThreshold;
+    result = { requeue: true, requeueOffset: 3, leech: word.leech && lapses === SRS.leechThreshold };
+    return result;
+  }
+
+  if (grade === 2) { // Hard
+    interval = Math.max(interval + 1, Math.round(interval * SRS.hardFactor));
+    ef = Math.max(SRS.minEf, ef - 0.15);
+  } else if (grade === 3) { // Good
+    interval = Math.round(interval * ef);
+  } else { // Easy
+    interval = Math.round(interval * ef * SRS.easyBonus);
+    ef = ef + 0.15;
+  }
+  interval = capInterval(fuzzInterval(interval));
+  word.ef = ef; word.interval = interval; word.lapses = lapses;
+  word.reps = (word.reps||0) + 1;
+  word.nextDue = now + interval * 86400000;
+  return result;
+}
+
 const daysUntil = ts => Math.max(0, Math.ceil((ts - Date.now()) / 86400000));
+
+/* ---- 1日の新規カード上限 ---- */
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+}
+function getNewCardsToday(deckId) {
+  const rec = LS.get('vq_new_counter') || {};
+  if (rec.date !== todayKey()) return 0;
+  return (rec.counts && rec.counts[deckId]) || 0;
+}
+function addNewCardsToday(deckId, n) {
+  let rec = LS.get('vq_new_counter') || {};
+  if (rec.date !== todayKey()) rec = { date: todayKey(), counts: {} };
+  rec.counts = rec.counts || {};
+  rec.counts[deckId] = (rec.counts[deckId] || 0) + n;
+  LS.set('vq_new_counter', rec);
+}
+function getNewCardLimit() {
+  const s = loadSettings();
+  return (typeof s.newCardsPerDay === 'number') ? s.newCardsPerDay : 20;
+}
 
 /* ============================================================
    UTILS
@@ -1476,9 +1643,12 @@ function deleteDeck(id) {
    ============================================================ */
 let qWords=[], qIdx=0, qOk=0, qNg=0, qInput=null, qDeckId=null;
 let qDirection='m2w', qFormat='choice', qCorrectAnswer='', qAnswered=false, qCardFormat='choice';
+let qCardShownAt = 0; // このカードが表示された時刻(ms) — 回答時間から難易度を自動判定するために使う
 const SESSION_KEY = 'vq_session';
 
-// キーボードショートカット: 1〜4キーで4択を選択、Enterで次のカードへ
+// キーボードショートカット:
+//   出題中   → 1〜4キーで4択を選択
+//   回答後   → Enterで次のカードへ（不正解時。正解時は自動で次へ進む）
 document.addEventListener('keydown', (e) => {
   const quizScreen = document.getElementById('screen-quiz');
   if (!quizScreen || !quizScreen.classList.contains('active')) return;
@@ -1560,8 +1730,21 @@ function startQuizDeck(deckId, forceNew) {
     }
   }
 
-  let words = loadWords().filter(w => w.deckId === deckId);
-  if (mode === 'due') words = words.filter(w => (w.nextDue||0) <= now);
+  let words = loadWords().filter(w => w.deckId === deckId).map(ensureSrsFields);
+  if (mode === 'due') {
+    const dueWords = words.filter(w => (w.nextDue||0) <= now);
+    const newOnes = shuffle(dueWords.filter(w => w.state === 'new'));
+    const inProgress = dueWords.filter(w => w.state !== 'new');
+    const limit = getNewCardLimit();
+    const studiedToday = getNewCardsToday(deckId);
+    const remaining = Math.max(0, limit - studiedToday);
+    const newToInclude = newOnes.slice(0, remaining);
+    if (newToInclude.length) addNewCardsToday(deckId, newToInclude.length);
+    words = [...inProgress, ...newToInclude];
+    if (newToInclude.length < newOnes.length && newOnes.length > 0) {
+      toast(`本日の新規単語（${limit}語）の上限に達したため、残りは翌日に表示されます`);
+    }
+  }
   if (mode === 'random') words = shuffle([...words]);
   if (!words.length) {
     if (mode === 'due') toast('復習が必要な単語はありません。「すべて」か「ランダム」をお試しください');
@@ -1595,6 +1778,7 @@ function loadCard() {
   document.getElementById('q-feedback').className = 'feedback';
   document.getElementById('q-feedback').innerHTML = '';
   document.getElementById('q-next-btn').style.display = 'none';
+  document.getElementById('q-kbd-next').style.display = 'none';
 
   const area = document.getElementById('q-answer-area');
   area.innerHTML = '';
@@ -1607,8 +1791,7 @@ function loadCard() {
     if (distractors.length < 3) cardFormat = 'input'; // この語だけ選択肢が足りない場合の保険
   }
   qCardFormat = cardFormat;
-  const kbdHint = document.getElementById('q-kbd-hint');
-  if (kbdHint) kbdHint.querySelector('span').style.display = cardFormat === 'choice' ? '' : 'none';
+  document.getElementById('q-kbd-choice').style.display = cardFormat === 'choice' ? '' : 'none';
 
   if (cardFormat === 'choice') {
     document.getElementById('q-check-btn').style.display = 'none';
@@ -1643,6 +1826,7 @@ function loadCard() {
   }
 
   updateProgress();
+  qCardShownAt = Date.now();
   setTimeout(() => qInput && qInput.focus(), 60);
 }
 
@@ -1656,7 +1840,7 @@ function selectChoice(btn, value) {
     if (normalizeKey(b.dataset.value) === normalizeKey(qCorrectAnswer)) b.classList.add('correct');
     else if (b === btn) b.classList.add('wrong');
   });
-  finishAnswer(correct, w);
+  handleAnswered(correct, w);
 }
 
 function checkAnswer() {
@@ -1668,7 +1852,7 @@ function checkAnswer() {
   qInput.className = 'blank-input ' + (correct ? 'correct' : 'wrong');
   qInput.disabled = true;
   document.getElementById('q-check-btn').style.display = 'none';
-  finishAnswer(correct, w);
+  handleAnswered(correct, w);
 }
 
 function resetStamp() {
@@ -1708,21 +1892,71 @@ function triggerStamp(correct) {
   }
 }
 
-function finishAnswer(correct, w) {
+function handleAnswered(correct, w) {
   const fb = document.getElementById('q-feedback');
-  fb.className = 'feedback ' + (correct ? 'ok' : 'ng');
-  fb.innerHTML = correct ? '✓　正解！' : `✕　不正解。正解：<strong>${esc(qCorrectAnswer)}</strong>`;
+  const elapsed = Date.now() - (qCardShownAt || Date.now());
   triggerStamp(correct);
-  correct ? qOk++ : qNg++;
-  sm2(w, correct ? 5 : 1);
-  const words = loadWords();
-  const i = words.findIndex(x => x.id === w.id);
-  if (i >= 0) Object.assign(words[i], { ef:w.ef, interval:w.interval, reps:w.reps, nextDue:w.nextDue });
-  saveWords(words);
+
+  if (!correct) {
+    fb.className = 'feedback ng';
+    fb.innerHTML = `✕　不正解。正解：<strong>${esc(qCorrectAnswer)}</strong>`;
+    qNg++;
+    document.getElementById('q-ng').textContent = qNg;
+    applyGrade(w, 1); // Again
+    document.getElementById('q-next-btn').style.display = '';
+    document.getElementById('q-kbd-next').style.display = '';
+    saveSession();
+    updateProgress();
+    return;
+  }
+
+  const grade = autoGrade(elapsed, qCardFormat, qCorrectAnswer.length);
+  const gradeMeta = { 2: ['難しい', 'ag-hard'], 3: ['普通', 'ag-good'], 4: ['簡単', 'ag-easy'] }[grade];
+  fb.className = 'feedback ok';
+  fb.innerHTML = `✓　正解！　<span class="auto-grade-tag ${gradeMeta[1]}">${gradeMeta[0]}</span>`;
+  qOk++;
   document.getElementById('q-ok').textContent = qOk;
-  document.getElementById('q-ng').textContent = qNg;
-  document.getElementById('q-next-btn').style.display = '';
+  applyGrade(w, grade);
   saveSession();
+  updateProgress();
+  setTimeout(nextCard, 550); // 正解はそのまま自動で次へ進む(自己評価の手間なし)
+}
+
+/**
+ * 回答にかかった時間から、Anki風の Hard/Good/Easy を自動推定する。
+ * - 4択は「見て即座に選べたか」、入力式は「正解の長さに対して
+ *   どれだけ早く打てたか」で判定基準を変える。
+ * - 迷わず即答 → Easy／普通のペース → Good／時間がかかった → Hard
+ */
+function autoGrade(elapsedMs, format, answerLen) {
+  let easyT, hardT;
+  if (format === 'choice') {
+    easyT = 2200;   // 2.2秒以内の即答 → Easy
+    hardT = 6500;   // 6.5秒を超えたら → Hard
+  } else {
+    const base = 1200 + 260 * Math.max(1, answerLen); // 文字数ぶんのタイピング時間を考慮
+    easyT = base * 0.55;
+    hardT = base * 1.6;
+  }
+  if (elapsedMs <= easyT) return 4; // Easy
+  if (elapsedMs <= hardT) return 3; // Good
+  return 2; // Hard
+}
+
+// SRSエンジンに1回分の採点を反映し、必要ならセッション内に再出題を仕込む
+function applyGrade(w, grade) {
+  const res = gradeCard(w, grade);
+  const words = loadWords();
+  const i = words.findIndex(x => String(x.id) === String(w.id));
+  if (i >= 0) Object.assign(words[i], w);
+  saveWords(words);
+  if (res && res.leech) {
+    toast(`「${w.word}」は${SRS.leechThreshold}回以上間違えています。意味や例文を見直してみましょう 🐛`);
+  }
+  if (res && res.requeue) {
+    const pos = Math.min(qWords.length, qIdx + 1 + res.requeueOffset);
+    qWords.splice(pos, 0, w);
+  }
 }
 
 function nextCard() { qIdx++; saveSession(); loadCard(); }
@@ -1852,7 +2086,7 @@ function importWords() {
   if (!valid.length) { toast('インポートできる単語がありません'); return; }
   const words = loadWords();
   valid.forEach(r => {
-    words.push({ id: Date.now()+Math.random(), deckId, word:r.word, trans:r.trans, memo:r.memo||'', ef:2.5, interval:1, reps:0, nextDue:0 });
+    words.push({ id: Date.now()+Math.random(), deckId, word:r.word, trans:r.trans, memo:r.memo||'', ef:SRS.startEf, interval:1, reps:0, nextDue:0, state:'new', lapses:0, learningStep:0 });
   });
   saveWords(words);
   toast(`${valid.length} 語をインポートしました`);
@@ -1901,13 +2135,19 @@ function renderManage() {
   const deckId = parseInt(document.getElementById('manage-deck-select').value);
   const q = document.getElementById('manage-search').value.trim().toLowerCase();
   const statusFilter = document.getElementById('manage-status-filter').value;
-  let words = loadWords().filter(w => w.deckId === deckId);
+  let words = loadWords().filter(w => w.deckId === deckId).map(ensureSrsFields);
 
   const flaggedCount = words.filter(isFlagged).length;
+  const leechCount = words.filter(w => w.leech).length;
   const statusOpt = document.querySelector('#manage-status-filter option[value="flag"]');
   if (statusOpt) statusOpt.textContent = `⚠ 要確認（${flaggedCount}）`;
+  const leechOpt = document.querySelector('#manage-status-filter option[value="leech"]');
+  if (leechOpt) leechOpt.textContent = `🐛 苦手（リーチ）（${leechCount}）`;
 
   if (statusFilter === 'flag') words = words.filter(isFlagged);
+  if (statusFilter === 'leech') words = words.filter(w => w.leech);
+  if (statusFilter === 'new') words = words.filter(w => w.state === 'new');
+  if (statusFilter === 'learning') words = words.filter(w => w.state === 'learning' || w.state === 'relearning');
   if (q) words = words.filter(w =>
     w.word.toLowerCase().includes(q) ||
     (w.trans||'').toLowerCase().includes(q)
@@ -1921,18 +2161,34 @@ function renderManage() {
   tbody.innerHTML = words.map(w => {
     const days = daysUntil(w.nextDue||0);
     const flagged = isFlagged(w);
+    const stateBadge = w.state === 'new' ? '<span class="srs-badge new">未学習</span>'
+      : (w.state === 'learning' || w.state === 'relearning') ? '<span class="srs-badge learning">学習中</span>'
+      : '<span class="srs-badge review">習得中</span>';
+    const leechBadge = w.leech ? '<span class="flag-dot" title="何度も間違えています(リーチ)">🐛</span>' : '';
     return `<tr class="${flagged ? 'flag-row' : ''}">
-      <td style="font-weight:500;letter-spacing:.04em">${flagged ? '<span class="flag-dot" title="単語と意味が一致しない可能性があります">⚠</span>' : ''}${esc(w.word)}</td>
+      <td style="font-weight:500;letter-spacing:.04em">${flagged ? '<span class="flag-dot" title="単語と意味が一致しない可能性があります">⚠</span>' : ''}${leechBadge}${esc(w.word)}</td>
       <td style="color:var(--ink-soft)">${esc(w.trans)}</td>
-      <td style="color:var(--ink-faint);font-size:12px;max-width:220px;white-space:normal;overflow-wrap:break-word">${esc(w.memo||'')}</td>
-      <td><span class="due-tag ${days===0?'today':'later'}">${days===0?'今日':days+'日後'}</span></td>
+      <td style="color:var(--ink-faint);font-size:12px;max-width:180px;white-space:normal;overflow-wrap:break-word">${esc(w.memo||'')}</td>
+      <td>${stateBadge}<br><span class="due-tag ${days===0?'today':'later'}" style="margin-top:4px;display:inline-block">${days===0?'今日':days+'日後'}</span></td>
       <td style="white-space:nowrap">
         <button class="btn sm ghost" onclick="openEditWordModal('${w.id}')">編集</button>
         ${flagged ? `<button class="btn sm" style="background:var(--gold-soft);color:var(--gold);border-color:transparent" onclick="resolveFlag('${w.id}')">確認済み</button>` : ''}
+        ${w.leech ? `<button class="btn sm" style="background:var(--indigo-soft);color:#22304c;border-color:transparent" onclick="resetLeech('${w.id}')">リセット</button>` : ''}
         <button class="btn sm danger-ghost" onclick="confirmDeleteWord('${w.id}','${esc(w.word)}')">削除</button>
       </td>
     </tr>`;
   }).join('');
+}
+
+function resetLeech(id) {
+  const words = loadWords();
+  const i = words.findIndex(x => String(x.id) === String(id));
+  if (i < 0) return;
+  words[i].leech = false;
+  words[i].lapses = 0;
+  saveWords(words);
+  toast('リーチ状態を解除しました');
+  renderManage();
 }
 
 function resolveFlag(id) {
@@ -2108,12 +2364,23 @@ function setDim(val) {
   updateOverlay();
 }
 
+function setNewCardsLimit(val) {
+  const s = loadSettings(); s.newCardsPerDay = parseInt(val, 10); saveSettings(s);
+  document.getElementById('newcards-val').textContent = val + '語';
+}
+
 function applySettings() {
   // 保存済みの背景画像を復元（リロード後も保持）。画像がある場合のみ暗さを適用する。
   loadBgImage().then(blob => {
     if (blob) setBgFromBlob(blob);
     else { _hasBgImage = false; updateOverlay(); }
   });
+  const s = loadSettings();
+  const newCardsLimit = (typeof s.newCardsPerDay === 'number') ? s.newCardsPerDay : 20;
+  const ncSlider = document.getElementById('newcards-slider');
+  const ncVal = document.getElementById('newcards-val');
+  if (ncSlider) ncSlider.value = newCardsLimit;
+  if (ncVal) ncVal.textContent = newCardsLimit + '語';
 }
 
 /* ============================================================
